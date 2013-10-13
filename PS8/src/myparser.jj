@@ -1,0 +1,846 @@
+/*
+ * Helen Liu
+ * 30245078
+ * hliu14@cmc.edu
+ */
+
+/* Options and class declaration */
+options {
+}
+
+/* Tells javacc to create a file called MyParser.java, and copies everything
+ * in between into Select.java */
+PARSER_BEGIN(MyParser)
+    import java.io.PrintStream;
+    import java.io.*;
+    import java.util.ArrayList;
+    import java.lang.reflect.*;
+
+    public class MyParser {
+
+      	static ArrayList<DBMS> myDatabases = new ArrayList<DBMS>(); // create empty ArrayList of databases
+      	static DBMS currentDB = null; // for USE commands
+
+        //public static void main(String[] args)
+        public static void mySort(String[] args)
+            throws ParseException, TokenMgrError {
+
+            MyParser parser = null;
+
+            if ( args.length < 1  ) {
+      			System.out.println("Reading from stdin (exit; to finish)");
+      			parser = new MyParser(System.in);
+      			parser.Start(System.out);
+    		} else {
+      			try {
+        			parser = new MyParser(new DataInputStream(new FileInputStream(args[0])));
+        			parser.Start(System.out);
+      			} catch (FileNotFoundException e) {
+        			System.out.println("File " + args[0] + " not found. Reading from stdin");
+        			parser = new MyParser(System.in);
+        			parser.Start(System.out);
+      			}
+    		} // else ends here
+
+    		//new MyParser(System.in);
+            //parser.Start(System.out);
+        }
+
+    }
+PARSER_END(MyParser)
+
+
+/* Specifying a lexical analyzer using regular expression productions */
+
+SKIP : { " " }
+SKIP : { "," }
+SKIP : { "\n" | "\r" | "\r\n" }
+TOKEN: { < CREATE: "CREATE" | "Create" | "create" > }
+TOKEN: { < TABLE: "table" | "TABLE" | "Table" > }
+TOKEN: { < USE: "USE" | "use" | "Use" > }
+TOKEN: { < DATABASE: "DATABASE" | "database" | "Database" > }
+TOKEN: { < DATABASES: "DATABASES" | "databases" | "Databases" > }
+TOKEN: { < INSERT: "INSERT" | "insert" | "Insert" > }
+TOKEN: { < INTO: "INTO" | "into" | "Into" > }
+TOKEN: { < VALUES: "VALUES" | "values" | "Values" > }
+TOKEN: { < UPDATE: "UPDATE" | "update" | "Update" > }
+TOKEN: { < SET: "SET" | "set" | "Set" > }
+TOKEN: { < SHOW: "SHOW" | "show" | "Show" > }
+TOKEN: { < PARENTHESES: "(" | ")" > }
+TOKEN: { < TYPE: "INTEGER" | "integer" | "integer" | "STRING" | "string" | "String" | "DOUBLE" | "double" | "Double" > }
+TOKEN: { < STAR: "*" > }
+TOKEN: { < SELECT: "select" | "SELECT" | "Select" > }
+TOKEN: { < FROM: "from" | "FROM" | "From" > }
+TOKEN: { < WHERE: "where" | "WHERE" | "Where" > }
+TOKEN: { < AND: "and" | "AND" | "And" > }
+TOKEN: { < EXIT: "exit" | "EXIT" | "Exit" > }
+TOKEN: { < EQUAL : "=" > }
+TOKEN: { < GREATERTHAN: ">" > }
+TOKEN: { < LESSTHAN: "<" > }
+TOKEN: { < #DIGIT : (["0"-"9"]) > }
+TOKEN: { < DIGITS : (<DIGIT>)+ > }
+TOKEN: { < DOUBLE: (<DIGIT>)+"."(<DIGIT>)+ > }
+TOKEN: { < #CHAR: ["A"-"Z","a"-"z"] > }
+TOKEN: { < QUOTE: "\"" > }
+TOKEN: { < STRING: (<CHAR>|<DIGIT>)+ > }
+TOKEN: { < DASH: "-" > }
+//TOKEN: { < STRINGS: <STRING>(" "<STRING>)+ > }
+TOKEN: { < SEMICOLON: ";" > }
+
+/* Specifying the parser using BNF productions */
+/* The input to the parser consists of a single statement so far:
+ *     Start --> Statement
+ */
+
+
+void Start(PrintStream printStream):
+{
+    SelectStatement sStmt;
+    CreateTableStatement ctsStmt;
+    InsertStatement iStmt;
+    UpdateStatement uStmt;
+    DBMS newDB;
+    DBMS db = new DBMS();
+    String requestedDatabaseName;
+}
+{
+    //{ db.loadTables(); }
+    //{ printStream.println("\nEx sql> select * from Students where major = CS;"); }
+    //{ printStream.print("sql> "); }
+
+    (
+
+      	<SHOW>
+      	<DATABASES>
+      	<SEMICOLON>
+
+      	{
+			printStream.print("SHOWING DATABASES: ");
+      	  	for (int i = 0; i < myDatabases.size(); i++) {
+      	  	  	DBMS current = myDatabases.get(i);
+	            printStream.print(current.getDbName() + "   ");
+      	  	}
+
+			printStream.println();
+      	  	//printStream.print("sql > ");
+      	  	printStream.println();
+      	}
+
+	| 
+		requestedDatabaseName = useDatabase(printStream)
+		{
+
+			boolean exists = false;
+
+			for (int i = 0; i < myDatabases.size(); i++) {
+				if (myDatabases.get(i).getDbName().equals(requestedDatabaseName)) {
+					currentDB = myDatabases.get(i);
+					exists = true;
+					printStream.println("USING DATABASE: " + currentDB.getDbName());
+					break;
+				}
+			}
+			if (exists == false) {
+			  	currentDB = null;
+			  	printStream.println("Error: Database does not exist");
+			}
+			
+			//printStream.print("sql > ");
+			printStream.println();
+		}
+	| 
+		<CREATE>
+		(
+	   		newDB = createDatabase(printStream)
+			{
+	            printStream.println("DATABASE CREATED: " + newDB.getDbName());
+	            myDatabases.add(newDB);
+
+				// FOR TESTING ONLY - TAKE OUT LATER
+	            /*for (int i = 0 ; i < myDatabases.size(); i++)
+	            {
+					DBMS current = myDatabases.get(i);	
+	              	printStream.print(current.getDbName());
+	            }*/
+	            // END
+	
+	            //printStream.print("sql> ");
+	            printStream.println();
+			}
+			
+		| 
+		  	ctsStmt = buildCreateTableStatement(printStream)
+		  	{
+				printStream.println("RESULT: ");
+				try {
+					if (currentDB != null)
+					{
+				    	db.createTable(ctsStmt);
+				    	
+				    	Table newTable = new Table();
+
+				    	newTable.setTableName(ctsStmt.getName());
+
+				    	ArrayList<String> attrNames = new ArrayList<String>();
+				    	for (int i = 0; i < ctsStmt.getAttrNames().size(); i++) {
+							attrNames.add(ctsStmt.getAttrNames().get(i));
+				    	}
+						newTable.setAttrNames(attrNames);
+
+						ArrayList<String> attrTypes = new ArrayList<String>();
+						for (int i = 0; i < ctsStmt.getAttrTypes().size(); i++) {
+							attrTypes.add(ctsStmt.getAttrTypes().get(i));
+						}
+						newTable.setAttrTypes(attrTypes);
+
+				    	currentDB.getDbTables().add(newTable);
+						
+				    	
+				  	} else {
+						printStream.println("ERROR: No database currently selected");
+				  	}
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+	
+				//printStream.print("sql > ");
+				printStream.println();
+		  	}
+		 )
+
+	 | 
+	  
+        sStmt = buildSelectStatement(printStream)
+    	{
+            printStream.println("RESULT:");
+            db.select(sStmt, currentDB, printStream);
+
+            //printStream.print("sql> ");
+            printStream.println();
+    	}
+
+	|
+		uStmt = buildUpdateStatement(printStream)
+		{
+			int index = -1;
+			if (currentDB != null) {
+			  	// Find index of table that we want to update
+			  	for (int i = 0; i < currentDB.getDbTables().size(); i++) {
+					if (currentDB.getDbTables().get(i).getTableName().equals(uStmt.getTableName())) {
+					  	index = i;
+					  	break;
+					}
+			  	}
+				if (index != -1) {
+					String whereAttrName = uStmt.getWhere().getAttrName();
+					String whereAttrValue = uStmt.getWhere().getAttrVal();
+					String setAttrName = uStmt.getSet().getAttrName();
+					String setAttrValue = uStmt.getSet().getAttrVal();
+					String tupleAttrValue = "";
+
+				  	Table updateThis = currentDB.getDbTables().get(index);
+	
+				  	// If where statement exists, find elements that fulfill the where statement, and update them
+					if ((uStmt.getWhere().getAttrName() != null) && (uStmt.getWhere().getAttrVal() != null)) {
+						
+						// Find corresponding attribute value in each tuple and check for equivalence. If equal, update
+						// for each tuple
+						for (int i = 0; i < updateThis.getTuples().size(); i++) {
+						  	try {
+						  	  	Class classToCheck = Class.forName(updateThis.getTableName());
+						  	  	Object tupleToUpdate = updateThis.getTuples().get(i);
+						  	  	Method[] methods = classToCheck.getMethods();
+						  	  	//Method getMethod = methods[attrIndex];
+								String getMethodName = "get" + whereAttrName;
+						  	  	Method getMethod = classToCheck.getMethod(getMethodName);
+
+						  	  	try {
+						  	  	  	tupleAttrValue = getMethod.invoke(tupleToUpdate).toString();
+								} catch (InvocationTargetException e) {
+					                System.out.println("22");
+					                System.out.println(e.getMessage());
+					            }
+
+						  	  	if (whereAttrValue.equals(tupleAttrValue)) {
+									// find name of set method
+									String setMethodName = "set" + setAttrName;
+
+									// find parameters of set method
+									String getMethodNameToGetParamType = "get" + setAttrName;
+									Method getMethodToGetParamType = classToCheck.getMethod(getMethodNameToGetParamType);
+									Class paramType = getMethodToGetParamType.getReturnType();
+									String paramTypeToString = paramType.toString();
+
+									Method setMethod = classToCheck.getMethod(setMethodName, paramType);
+
+									// update tuple
+									if (paramTypeToString.equals("class java.lang.String")) {
+										try {
+										  	setMethod.invoke(tupleToUpdate, setAttrValue);
+										}
+								        catch (InvocationTargetException e) {
+								        	System.out.println("22");
+								            System.out.println(e.getMessage());
+								        }
+									} else if (paramTypeToString.equals("int")) {
+										try {
+											setMethod.invoke(tupleToUpdate, Integer.parseInt(setAttrValue));
+										}
+								        catch (InvocationTargetException e) {
+								            System.out.println("22");
+								        	System.out.println(e.getMessage());
+								     	}
+									} else if (paramTypeToString.equals("double")) {
+										try {
+										  	setMethod.invoke(tupleToUpdate, Double.parseDouble(setAttrValue));
+									  	}
+							            catch (InvocationTargetException e) {
+							                System.out.println("22");
+							                System.out.println(e.getMessage());
+							            }
+									}
+						  	  	}
+						  	}
+  	                   		catch (SecurityException e1) {
+								// TODO Auto-generated catch block
+								e1.printStackTrace();
+							}
+							catch (NoSuchMethodException e1) {
+								// TODO Auto-generated catch block
+								e1.printStackTrace();
+							}
+						  	catch (ClassNotFoundException e) {
+					            System.out.println("a");
+					            System.out.println(e.getMessage());
+					      	}
+					        catch (IllegalAccessException e) {
+					            System.out.println("ccc");
+					            System.out.println(e.getMessage());
+					        }
+						}
+				 	} else { // If no where statement, update all of them.
+
+						
+						// update each tuple
+					  	for (int i = 0; i < updateThis.getTuples().size(); i++) {
+							try {
+								Class classToCheck = Class.forName(updateThis.getTableName());
+								Object tupleToUpdate = updateThis.getTuples().get(i);
+								Method[] methods = classToCheck.getMethods();
+
+								// find name of set method
+								String setMethodName = "set" + setAttrName;
+
+								// find parameters of set method
+								String getMethodNameToGetParamType = "get" + setAttrName;
+								Method getMethodToGetParamType = classToCheck.getMethod(getMethodNameToGetParamType);
+								Class paramType = getMethodToGetParamType.getReturnType();
+								String paramTypeToString = paramType.toString();
+
+								Method setMethod = classToCheck.getMethod(setMethodName, paramType);
+	
+					  	  	  	if (paramTypeToString.equals("class java.lang.String")) {
+									try {
+								  		setMethod.invoke(tupleToUpdate, setAttrValue);
+								 	}
+						            catch (InvocationTargetException e) {
+						                System.out.println("22");
+						                System.out.println(e.getMessage());
+						            }
+								} else if (paramTypeToString.equals("int")) {
+								  	try {
+								  	  	setMethod.invoke(tupleToUpdate, Integer.parseInt(setAttrValue));
+								  	}
+						            catch (InvocationTargetException e) {
+						                System.out.println("22");
+						                System.out.println(e.getMessage());
+						            }
+								} else if (paramTypeToString.equals("double")) {
+								  	try {
+								  		setMethod.invoke(tupleToUpdate, Double.parseDouble(setAttrValue));
+								  	}
+						            catch (InvocationTargetException e) {
+						                System.out.println("22");
+						                System.out.println(e.getMessage());
+						            }
+								}
+							}
+							catch (ClassNotFoundException e) {
+					            System.out.println("a");
+					            System.out.println(e.getMessage());
+					        }
+					        catch (IllegalAccessException e) {
+					            System.out.println("ccc");
+					            System.out.println(e.getMessage());
+					        }
+					        catch (SecurityException e1) {
+								// TODO Auto-generated catch block
+								e1.printStackTrace();
+							} catch (NoSuchMethodException e1) {
+								// TODO Auto-generated catch block
+								e1.printStackTrace();
+							}
+				      	}
+				 	}
+				} else {
+				  	printStream.println("ERROR: Table does not exist");
+				}
+			} else {
+			  	printStream.println("ERROR: No database currently in use");
+			}
+			//printStream.print("sql > ");
+			printStream.println();
+		}
+	| 
+	 	iStmt = buildInsertStatement(printStream)
+	 	{
+			int index2 = -1;
+		  	if (currentDB != null) {
+				// Find index of table that we want to insert the new element into
+				for (int i = 0; i < currentDB.getDbTables().size(); i++) {
+				  	if (currentDB.getDbTables().get(i).getTableName().equals(iStmt.getTableName())) {
+				  		index2 = i;
+				  		break;
+				  	}
+				}
+
+				// Insert the new element into appropriate table
+				if (index2 != -1) {
+				  	ArrayList<Table> tables = currentDB.getDbTables();
+				  	Table tableToBeInsertedInto = tables.get(index2);
+
+				  	// Create new object to be inserted
+					try {
+						Class classToInsert = Class.forName(iStmt.getTableName());
+						Object insertThis = classToInsert.newInstance();
+
+						String setMethodName = "";
+						Method setMethod = null;
+						String getMethodName = "";
+						Method getMethod = null;
+						Class paramType = null;
+
+						// set attributes
+						for (int i = 0; i < iStmt.getAttributes().size(); i++) {
+								String parameter = iStmt.getAttributes().get(i);
+
+								// get name of set method
+								setMethodName = "set" + tableToBeInsertedInto.getAttrNames().get(i);
+
+								// get param type of set method
+								getMethodName = "get" + tableToBeInsertedInto.getAttrNames().get(i);
+								getMethod = classToInsert.getMethod(getMethodName);
+								paramType = getMethod.getReturnType();
+								String paramTypeToString = paramType.toString();
+
+								setMethod = classToInsert.getMethod(setMethodName, paramType);
+								
+								if (paramTypeToString.equals("class java.lang.String")) {
+									try {
+								  		setMethod.invoke(insertThis, parameter);
+								 	}
+						            catch (InvocationTargetException e) {
+						                System.out.println("22");
+						                System.out.println(e.getMessage());
+						            }
+								} else if (paramTypeToString.equals("int")) {
+								  	try {
+								  	  	setMethod.invoke(insertThis, Integer.parseInt(parameter));
+								  	}
+						            catch (InvocationTargetException e) {
+						                System.out.println("22");
+						                System.out.println(e.getMessage());
+						            }
+								} else if (paramTypeToString.equals("double")) {
+								  	try {
+								  		setMethod.invoke(insertThis, Double.parseDouble(parameter));
+								  	}
+						            catch (InvocationTargetException e) {
+						                System.out.println("22");
+						                System.out.println(e.getMessage());
+						            }
+								}
+						}
+
+
+						tableToBeInsertedInto.addTuple(insertThis); // insert this new element
+
+					  	printStream.print("VALUES: (");
+				 	  	for (int i = 0; i < iStmt.attributes.size(); i++) {
+							printStream.print(iStmt.attributes.get(i) + " ");
+				 	  	}
+				 	  	printStream.print(")");
+				 	  	printStream.println(" INSERTED INTO TO " + iStmt.tableName + " TABLE");
+
+					}
+			        catch (ClassNotFoundException e) {
+			            System.out.println("a");
+			            System.out.println(e.getMessage());
+			        }
+			        catch (InstantiationException e) {
+			            System.out.println("bb");
+			            System.out.println(e.getMessage());
+			        }
+			        catch (IllegalAccessException e) {
+			            System.out.println("ccc");
+			            System.out.println(e.getMessage());
+			        }
+			     	catch (SecurityException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+					catch (NoSuchMethodException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+				} else {
+				  	printStream.println("ERROR: Table does not exist");
+				}
+	 	 	}
+	 	  	//printStream.print("sql > ");
+	 	  	printStream.println();
+	 	}
+
+
+
+    )*   // Do as many of these before you try exit;
+    <EXIT>
+    <SEMICOLON>
+    { printStream.println("EXIT. Good Bye..."); }
+	
+}
+
+String useDatabase(PrintStream printStream):
+{
+	String name;
+	Token t;
+}
+{
+	t = <USE>
+	t = <DATABASE>
+	t = <STRING>
+	{ name = t.image; }
+	t = <SEMICOLON>
+	{ return name; }
+}
+
+EqualExpression buildEqualExpression(PrintStream printStream) throws NumberFormatException :
+{
+    Token t;
+    EqualExpression eq = new EqualExpression();
+}
+{
+	t = <STRING>
+	{ eq.attr = t.image; }	
+	
+    (      t = <EQUAL>
+      { eq.op = t.image; }
+    |
+      t = <GREATERTHAN>
+      { eq.op = t.image; }
+    |
+      t = <LESSTHAN>
+      { eq.op = t.image; }
+    )
+	
+    (
+        t = <DIGITS>
+        { eq.val = t.image; }
+        //{ printStream.println("---DIGITS: t.image " + t.image); }
+
+      |
+        t = <STRING>
+        { eq.attr2 = t.image; }
+        //{ printStream.println("---String: t.image " + t.image); }
+
+      |
+		t = <QUOTE>
+		(
+			t = <STRING>
+			{ eq.val = (t.image); }
+
+			(
+			  t = <STRING>
+			  	//{ printStream.print(iStmt.attributes.get(iStmt.attributes.size() - 1)); }
+				{ eq.val = eq.val.concat(t.image); }
+			  	[
+				  t = <DASH>
+				  { eq.val = eq.val.concat(t.image); }
+				|
+				  t = <AND>
+				  { eq.val = eq.val.concat(t.image); }
+				]
+			)*
+
+			t = <QUOTE>
+		|
+
+			t = <DIGITS>
+			{ eq.val = eq.val.concat(t.image); }
+
+			[
+			  t = <DASH>
+			  { eq.val = eq.val.concat(t.image); }
+
+			  t = <DIGITS>
+			  { eq.val = eq.val.concat(t.image); }
+			]
+
+			t = <QUOTE>
+		)
+    |
+    	t = <DOUBLE>
+		{ eq.val = t.image; }
+        //{ printStream.println("---DOUBLE: t.image " + t.image); }
+    )
+    { return eq; }
+}
+
+DBMS createDatabase(PrintStream printStream):
+{
+	Token t;
+	DBMS newDB;
+	//StringBuffer buffer = new StringBuffer();	
+}
+{
+  	//t = <CREATE>
+    //{ buffer.append(t.image); }
+    
+    t = <DATABASE>
+    //{ buffer.append(t.image); }
+    
+    t = <STRING>
+    //{ buffer.append(t.image); }
+    { newDB = new DBMS(t.image); }
+
+    t = <SEMICOLON>
+    //{ printStream.println("    -> " + buffer); }
+    { printStream.println(); }
+    { return newDB; }
+}
+
+InsertStatement buildInsertStatement(PrintStream printStream):
+{
+	Token t;
+	InsertStatement iStmt = new InsertStatement();
+	//StringBuffer buffer = new StringBuffer();
+}
+{
+	t = <INSERT>
+    //{ buffer.append(t.image); }
+    
+    t = <INTO>
+    //{ buffer.append(t.image); }
+
+    t = <STRING>
+    //{ buffer.append(t.image); }
+    { iStmt.tableName = t.image; }
+
+    t = <VALUES>
+    //{ buffer.append(t.image); }	
+
+    t = <PARENTHESES>
+    //{ buffer.append(t.image); }
+
+    (
+			t = <QUOTE>
+			(
+				t = <STRING>
+				//{ buffer.append(t.image); }
+				{ iStmt.attributes.add(t.image); }
+				{ String updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1); }
+	
+				(
+				  t = <STRING>
+				  	//{ printStream.print(iStmt.attributes.get(iStmt.attributes.size() - 1)); }
+					{ updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+					{ iStmt.attributes.set(iStmt.attributes.size() - 1, updatedAttr); }
+					//{ printStream.print(iStmt.attributes.size()); }
+				  	[
+					  t = <DASH>
+					  //{ iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+					  	{ updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+						{ iStmt.attributes.set(iStmt.attributes.size() - 1, updatedAttr); }
+					|
+					  t = <AND>
+					  //{ iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+					  	{ updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+						{ iStmt.attributes.set(iStmt.attributes.size() - 1, updatedAttr); }
+					]				)*
+	
+				t = <QUOTE>
+			|
+	
+				t = <DIGITS>
+				//{ buffer.append(t.image); }
+				{ iStmt.attributes.add(t.image); }
+				{ updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1); }
+	
+				[
+				  t = <DASH>
+				  //{ iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+				  { updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+				  { iStmt.attributes.set(iStmt.attributes.size() - 1, updatedAttr); }
+	
+				  t = <DIGITS>
+				  //{ iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+				  { updatedAttr = iStmt.attributes.get(iStmt.attributes.size() - 1).concat(t.image); }
+				  { iStmt.attributes.set(iStmt.attributes.size() - 1, updatedAttr); }
+				]
+	
+				t = <QUOTE>
+			)
+		|
+			t = <DIGITS>
+			//{ buffer.append(t.image); }
+			{ iStmt.attributes.add(t.image); }
+		|
+			t = <DOUBLE>
+			//{ buffer.append(t.image); }
+			{ iStmt.attributes.add(t.image); }	 
+    )+ // repeat as many times as you want
+
+    t = <PARENTHESES>
+    //{ buffer.append(t.image); }
+
+    t = <SEMICOLON>
+    //{ printStream.println("    -> " + buffer); }
+    { printStream.println(); }
+    { return iStmt; }
+}
+
+CreateTableStatement buildCreateTableStatement(PrintStream printStream):
+{
+	Token t;
+	CreateTableStatement cts = new CreateTableStatement();
+	//StringBuffer buffer = new StringBuffer();
+}
+{
+	//t = <CREATE>
+    //{ buffer.append(t.image); }
+    
+    t = <TABLE>
+    //{ buffer.append(t.image); }
+    
+    t = <STRING>
+    //{ buffer.append(t.image); }
+    { cts.name = t.image; }
+
+    t = <PARENTHESES>
+    //{ buffer.append(t.image); }
+
+    (
+		t = <STRING>
+		//{ buffer.append(t.image); }
+		{ cts.attrNames.add(t.image); }
+
+		t = <TYPE>
+		//{ buffer.append(t.image); }
+		{ cts.attrTypes.add(t.image); }
+    )+ // repeat as many times as you want
+
+    t = <PARENTHESES>
+    //{ buffer.append(t.image); }
+
+    t = <SEMICOLON>
+    //{ printStream.println("    -> " + buffer); }
+    { printStream.println(); }
+    { return cts; }
+}
+
+UpdateStatement buildUpdateStatement(PrintStream printStream):
+{
+	Token t;
+	UpdateStatement uStmt = new UpdateStatement();
+	//StringBuffer buffer = new StringBuffer();
+}
+{
+  	t = <UPDATE>
+    //{ buffer.append(t.image); }
+    
+    t = <STRING>
+    //{ buffer.append(t.image); }
+    { uStmt.tableName = t.image; }
+    
+    t = <SET>
+    //{ buffer.append(t.image); }
+    
+	uStmt.set = buildEqualExpression(printStream)
+    	
+    [
+	t = <WHERE>
+	//{ buffer.append(t.image); }
+
+	uStmt.where = buildEqualExpression(printStream) // calls function above
+
+    ] // optional WHERE statement
+    
+    t = <SEMICOLON>
+    { printStream.println(uStmt.tableName + " tuple(s) updated"); }
+    { return uStmt; }
+}
+
+SelectStatement buildSelectStatement(PrintStream printStream):
+{
+    Token t;
+    SelectStatement ss = new SelectStatement();
+    //StringBuffer buffer = new StringBuffer();
+}
+{	
+
+    t = <SELECT>
+    //{ buffer.append(t.image); }
+    
+    (
+	    t = <STAR>
+	    //{ buffer.append(t.image); }
+	    { ss.select.add(t.image); }
+	  |
+	  (
+	    t = <STRING>
+	    //{ buffer.append(t.image); }
+	    { ss.select.add(t.image); }
+	  )+
+  	)
+    
+    t = <FROM>
+    //{ buffer.append(t.image); }
+    
+    (      t = <STRING>
+      //{ buffer.append(t.image); }
+      { ss.from.add(t.image); }
+    )+
+    	
+    [
+	t = <WHERE>
+	//{ buffer.append(t.image); }
+
+		(		  	//ss.where1 = buildEqualExpression(printStream)
+		  	{ ss.where.add(buildEqualExpression(printStream)); }
+		// | 
+	
+			//t = <PARENTHESES>
+			//ss.where = buildEqualExpression(printStream) // calls function above
+			//ss.where1 = buildEqualExpression(printStream)
+		
+			//t = <PARENTHESES>
+				[
+				t = <AND>
+		
+				//t = <PARENTHESES>
+				
+				//ss.where2 = buildEqualExpression(printStream)
+				{ ss.where.add(buildEqualExpression(printStream)); }
+		
+				//t = <PARENTHESES>
+				]
+		)
+	
+	] // optional WHERE statement
+    
+    t = <SEMICOLON>
+    //{ printStream.println("    -> " + buffer); }
+    { printStream.println(); }
+    { return ss; }
+
+}

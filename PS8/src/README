@@ -1,0 +1,52 @@
+You can either run my program taking an input file (./test_input3.sql) as a command line argument, or without taking an input file as an argument.
+
+As usual, start with:
+javacc MyParser.jj
+javac MyParser.java
+java MyParser
+
+Please run in Eclipse!
+
+Currently, sort-merge join is the default. To use index-nested loops join, comment out lines 139 to 591 in DBMS.java and uncomment out lines 605 to 850.
+NOTE: I implemented my code so that sort-merge join and index-nested loops join are only used when the WHERE clause is of the form attr op attr.
+Regular cross-product is done when  WHERE clause is of the form attr op val.
+My code only supports one statement in the WHERE clause if there is a statement of the form attr op attr.
+If all statements in the WHERE clause are of the form attr op val, my code supports multiple WHERE statements.
+
+Performance measurements for query SELECT * FROM Student, Professor WHERE sname = pname:
+	Sort-Merge Join:
+		808 ms
+		809 ms
+		822 ms
+		795 ms
+		825 ms
+		834 ms
+		808 ms
+		809 ms
+		808 ms
+		829 ms
+			AVG: 815 ms
+	Index Nested-Loops Join:
+		789 ms
+		825 ms
+		826 ms
+		849 ms
+		793 ms
+		809 ms
+		805 ms
+		828 ms
+		809 ms
+		830 ms
+			AVG: 816 ms
+	Cross-Product (query is SELECT * FROM Student, Professor, WHERE sname = "Delmar" and pname = "Delmar"):
+		922 ms
+		920 ms
+		919 ms
+		935 ms
+		929 ms
+		946 ms
+		911 ms
+		916 ms
+		949 ms
+		933 ms
+			AVG: 928 ms
